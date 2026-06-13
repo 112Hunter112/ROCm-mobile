@@ -42,6 +42,7 @@ static int smu13_set_sustained_clock(struct smu_context *smu, uint32_t mhz)
 						    mhz, mhz);
 	if (ret) {
 		pr_err("compute_mobile: failed to set soft freq range\n");
+		mutex_unlock(&cm_state.lock);
 		return ret;
 	}
 
