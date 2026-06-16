@@ -69,7 +69,7 @@ static uint32_t wl_avg_duration(void)
 	if (tracker.count == 0)
 		return 0;
 
-	avg = tracker.total_us / WL_HISTORY_LEN;
+	avg = tracker.total_us / tracker.count;
 
 	return avg;
 }
@@ -162,6 +162,7 @@ static ssize_t workload_class_show(struct device *dev,
 	switch (tracker.current) {
 	case WL_CLASS_INTERACTIVE:
 		name = "interactive";
+		break;
 	case WL_CLASS_SUSTAINED:
 		name = "sustained";
 		break;
@@ -241,7 +242,7 @@ int smu13_wl_sysfs_init(struct device *dev)
 	if (ret)
 		pr_err("compute_mobile: sysfs init failed\n");
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(smu13_wl_sysfs_init);
 
@@ -251,3 +252,37 @@ void smu13_wl_sysfs_remove(struct device *dev)
 	sysfs_remove_group(&dev->kobj, &rocm_mobile_attr_group);
 }
 EXPORT_SYMBOL(smu13_wl_sysfs_remove);
+
+
+int smu13_wl_selftest(void)
+{
+	int i;
+	uint32_t avg;
+	int fail = 0;
+
+	mutex_lock(&tracker.lock);
+	memset(&tracker.history, 0, sizeof(tracker.history));
+	tracker.head = 0;
+	tracker.count = 0;
+	tracker.total_us = 0;
+	mutex_unlock(&tracker.lock);
+
+	for (i = 0; i < 4; i++)
+		wl_record_dispatch(1000);
+
+	avg = wl_avg_duration();
+	if (avg != 1000) {
+		pr_err("compute_mobile selftest: avg %u expected 1000\n", avg);
+		fail++;
+	}
+
+	if (tracker.count != 4) {
+		pr_err("compute_mobile selftest: count %d expected 4\n",
+		       tracker.count);
+		fail++;
+	}
+
+	pr_info("compute_mobile selftest: %s\n", fail ? "FAIL" : "PASS");
+	return fail ? -EINVAL : 0;
+}
+EXPORT_SYMBOL(smu13_wl_selftest);
