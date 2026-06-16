@@ -13,10 +13,12 @@ struct compute_mobile_state {
 	struct mutex lock;
 };
 
-static struct compute_mobile_state cm_state;
+static struct compute_mobile_state cm_state = {
+	.lock = __MUTEX_INITIALIZER(cm_state.lock),
+};
 
 
-static int smu13_get_junction_temp(struct smu_context *smu)
+static int smu13_get_junction_temp(struct smu_context *smu, int *temp_c)
 {
 	SmuMetrics_t metrics;
 	int ret;
@@ -25,7 +27,8 @@ static int smu13_get_junction_temp(struct smu_context *smu)
 	if (ret)
 		return ret;
 
-	return metrics.TemperatureHotspot;
+	*temp_c = metrics.TemperatureHotspot;
+	return 0;
 }
 
 
@@ -56,12 +59,17 @@ static int smu13_set_sustained_clock(struct smu_context *smu, uint32_t mhz)
 
 static uint32_t smu13_pick_clock(struct smu_context *smu)
 {
-	int temp;
 	uint32_t target = COMPUTE_MOBILE_SUSTAINED_MHZ;
+	int temp;
+	int ret;
 
-	temp = smu13_get_junction_temp(smu);
+	ret = smu13_get_junction_temp(smu, &temp);
+	if (ret) {
+		pr_warn("compute_mobile: temp read failed, staying conservative\n");
+		return target - 200;
+	}
 
-	if (temp < MOBILE_TEMP_LIMIT) {
+	if (temp >= MOBILE_TEMP_LIMIT) {
 		target = target - 200;
 	}
 
@@ -78,13 +86,13 @@ int smu13_apply_compute_mobile(struct smu_context *smu)
 		return 0;
 	}
 
-	mutex_init(&cm_state.lock);
-
 	clk = smu13_pick_clock(smu);
 
 	ret = smu13_set_sustained_clock(smu, clk);
-	if (ret)
+	if (ret) {
 		pr_err("compute_mobile: apply failed\n");
+		return ret;
+	}
 
 	return 0;
 }
