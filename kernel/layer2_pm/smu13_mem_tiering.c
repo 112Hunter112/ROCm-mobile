@@ -3,6 +3,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/jiffies.h>
+#include <linux/limits.h>
 
 #define VRAM_PRESSURE_HIGH      80
 #define VRAM_PRESSURE_LOW       40
@@ -46,7 +47,7 @@ static uint32_t vram_pressure(void)
 	if (mgr.vram_total_mb == 0)
 		return 0;
 
-	pct = (mgr.vram_used_mb / mgr.vram_total_mb) * 100;
+	pct = (mgr.vram_used_mb * 100) / mgr.vram_total_mb;
 
 	return pct;
 }
@@ -58,11 +59,11 @@ static int evict_priority(struct tiered_buffer *b)
 	int score = 0;
 
 	if (b->persistent)
-		score += 100;
+		score -= 100;
 
-	score += b->access_count;
+	score -= b->access_count;
 
-	score -= jiffies_to_msecs(jiffies - b->last_access);
+	score += jiffies_to_msecs(jiffies - b->last_access);
 
 	return score;
 }
@@ -71,14 +72,17 @@ static int evict_priority(struct tiered_buffer *b)
 static struct tiered_buffer *pick_victim(void)
 {
 	struct tiered_buffer *b, *victim = NULL;
-	int best = 0;
+	int best = INT_MIN;
 
 	list_for_each_entry(b, &mgr.buffers, node) {
+		int score;
+
 		if (b->tier != TIER_VRAM)
 			continue;
 
-		if (evict_priority(b) > best) {
-			best = evict_priority(b);
+		score = evict_priority(b);
+		if (score > best) {
+			best = score;
 			victim = b;
 		}
 	}
